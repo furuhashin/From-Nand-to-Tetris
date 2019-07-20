@@ -39,5 +39,47 @@ CHIP CPU {
         pc[15];          // address of next instruction
 
     PARTS:
-    // Put your code here:
+    // A命令かC命令かを命令から取得
+    Or(a=instruction[15],b=instruction[15],out=c-instruction);
+    Not(in=c-instruction,out=a-instruction);
+    // Dレジスタをロードするか
+    And(a=instruction[4],b=c-instruction,out=is-load-d);
+    DRegister(in=alu-out,load=is-load-d,out=out-d);
+
+    // Aレジスタをロードするか(selをa-instructionにしたほうがいいかも・・？)
+    // AレジスタはC命令の結果とA命令そのもの、2種類の入力があるのでどっちか決める
+    Mux16(a=instruction,b=alu-out,sel=c-instruction,out=a-register-in);
+    // Aレジスタをロードするか(A命令の場合もしくは、instruction[5]が1か)
+    Or(a=a-instruction,b=instruction[5],out=is-load-a);
+    // Aレジスタの出力は単なるAレジスタの出力と、addressMの２種類存在する
+    ARegister(in=a-register-in,load=is-load-a,out[0..15]=out-a,out[0..14]=addressM);
+
+    Mux16(a=out-a,b=inM,sel=instruction[12],out=alu-in-y);
+    // instruction[11]からcomp領域なのでそのまま記述。out=alu-out（出力をalu-outとして受け取る）結果の左端が1だった場合結果はマイナスとなるのでout[15]=alu-minusとしている
+    ALU(x=out-d, y=alu-in-y, zx=instruction[11], nx=instruction[10], zy=instruction[9], ny=instruction[8], f=instruction[7], no=instruction[6], out=alu-out, out[0..7]=alu-out1, out[8..15]=alu-out2, out[15]=alu-minus, out=outM, zr=alu-zr, ng=alu-ng);
+
+    // メモリに書き込むか
+    And(a=instruction[3],b=c-instruction,out=writeM);
+    // alu-outが正か負か0かを求める
+    Not(in=alu-minus, out=alu-plusorzero); //正の数または0
+    Or8Way(in=alu-out1, out=temp1); // out[0..7]のビットの中で1つでも1があった場合、tmp1はtrueになる
+    Or8Way(in=alu-out2, out=temp2); // out[8..15]のビットの中で1つでも1があった場合、tmp2はtrueになる
+    Or(a=temp1, b=temp2, out=temp3); // outの全ビットの中で1つでも1があった場合、tmp3はtrueになる
+    Not(in=temp3, out=alu-iszero);
+    And(a=alu-plusorzero, b=temp3, out=alu-plus);
+
+    // カウンタ
+    // C命令の場合のみ飛ぶのを忘れずに
+    // j1, j2, j3が値として有効か確認
+    And(a=alu-minus, b=instruction[2], out=is-j1);
+    And(a=alu-iszero, b=instruction[1], out=is-j2);
+    And(a=alu-plus, b=instruction[0], out=is-j3);
+    // is-j1,is-j2,is-j3のすべてが0の場合、jumpしないので確認する
+    Or8Way(in[0]=is-j1, in[1]=is-j2, in[2]=is-j3, out=is-jump);
+    // なおかつ、C命令か
+    And(a=is-jump, b=c-instruction, out=can-jump);
+    // PC処理
+    // incは基本true
+    PC(in=out-a, load=can-jump, inc=true, reset=reset, out[0..14]=pc);
+
 }
