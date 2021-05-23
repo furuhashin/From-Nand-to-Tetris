@@ -15,5 +15,5 @@ CHIP Bit {
 
     PARTS:
     Mux(a=outforread,b=in,sel=load,out=w1);
-    DFF(in=w1,out=out,out=outforread);
+    DFF(in=w1,out=out,out=outforread); //outを複数定義できる。名前がoutは外部出力、outforreadは内部への出力
 }

@@ -16,6 +16,7 @@ CHIP PC {
     OUT out[16];
 
     PARTS:
+    // 書いてある順番どおり実装しないとテストが通らない？
     // incの処理
     Inc16(in=fb,out=w1);
     Mux16(a=fb,b=w1,sel=inc,out=w2);
@@ -24,5 +25,5 @@ CHIP PC {
     // resetの処理
     Mux16(a=w3,b=false,sel=reset,out=w4);
     // 上から流れてきた値を常にoutとしたいので、loadを常にtrueにする
-    Register(in=w4,load=true,out=out,out=fb);
+    Register(in=w4,load=true,out=out,out=fb); // fbを定義しないと値を保持し続けれなくなる（内部へのINが消えるから）
 }
