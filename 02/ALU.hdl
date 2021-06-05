@@ -61,7 +61,7 @@ CHIP ALU {
 
     // noの処理
     Not16(in=fout,out=notfout);
-    // out[15]は符号ビットなので1の場合は負となる。out<0の場合ng=1となるので符号ビットをそのまま渡せばよい
+    // out[15]s<0の場合ng=1となるので符号ビットをそのまま渡せばよい
     Mux16(a=fout,b=notfout,sel=no,out=out,out[0..7]=out0to7,out[8..15]=out8to15,out[15]=ng);　//この時点でout,ngが確定する
     Or8Way(in=out0to7,out=or0to7); // 全て0か検査
     Or8Way(in=out8to15,out=or8to15); // 全て0か検査

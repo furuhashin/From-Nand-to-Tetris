@@ -6,23 +6,23 @@
 /**
  * The Hack CPU (Central Processing unit), consisting of an ALU,
  * two registers named A and D, and a program counter named PC.
- * The CPU is designed to fetch and execute instructions written in 
+ * The CPU is designed to fetch and execute instructions written in
  * the Hack machine language. In particular, functions as follows:
- * Executes the inputted instruction according to the Hack machine 
+ * Executes the inputted instruction according to the Hack machine
  * language specification. The D and A in the language specification
  * refer to CPU-resident registers, while M refers to the external
- * memory location addressed by A, i.e. to Memory[A]. The inM input 
- * holds the value of this location. If the current instruction needs 
- * to write a value to M, the value is placed in outM, the address 
- * of the target location is placed in the addressM output, and the 
- * writeM control bit is asserted. (When writeM==0, any value may 
- * appear in outM). The outM and writeM outputs are combinational: 
- * they are affected instantaneously by the execution of the current 
- * instruction. The addressM and pc outputs are clocked: although they 
- * are affected by the execution of the current instruction, they commit 
- * to their new values only in the next time step. If reset==1 then the 
- * CPU jumps to address 0 (i.e. pc is set to 0 in next time step) rather 
- * than to the address resulting from executing the current instruction. 
+ * memory location addressed by A, i.e. to Memory[A]. The inM input
+ * holds the value of this location. If the current instruction needs
+ * to write a value to M, the value is placed in outM, the address
+ * of the target location is placed in the addressM output, and the
+ * writeM control bit is asserted. (When writeM==0, any value may
+ * appear in outM). The outM and writeM outputs are combinational:
+ * they are affected instantaneously by the execution of the current
+ * instruction. The addressM and pc outputs are clocked: although they
+ * are affected by the execution of the current instruction, they commit
+ * to their new values only in the next time step. If reset==1 then the
+ * CPU jumps to address 0 (i.e. pc is set to 0 in next time step) rather
+ * than to the address resulting from executing the current instruction.
  */
 
 CHIP CPU {
@@ -34,52 +34,71 @@ CHIP CPU {
                          // the current program (reset==0).
 
     OUT outM[16],        // M value output
-        writeM,          // Write to M? 
+        writeM,          // Write to M?
         addressM[15],    // Address in data memory (of M)
         pc[15];          // address of next instruction
 
     PARTS:
+    // 右上のALUの出力をDレジスタに保存する部分
     // A命令かC命令かを命令から取得
+    // A命令（アドレス命令）は最上位ビットが0,C命令（計算命令）は最上位ビットが1なのでorが０だったらA命令、1だったら計算命令
+    // orでもandでもいい
     Or(a=instruction[15],b=instruction[15],out=c-instruction);
+    // C命令がtrueだったらA命令はfalse
     Not(in=c-instruction,out=a-instruction);
     // Dレジスタをロードするか
+    // instructionの５ビット目(d2)で判断できる。P72（instruction[0~15]）
+    // d2がtrueかつC命令の場合のみDレジスタにALU出力を保存する
     And(a=instruction[4],b=c-instruction,out=is-load-d);
     DRegister(in=alu-out,load=is-load-d,out=out-d);
 
+    // 最初のMUX〜Aレジスタの部分
     // Aレジスタをロードするか(selをa-instructionにしたほうがいいかも・・？)
-    // AレジスタはC命令の結果とA命令そのもの、2種類の入力があるのでどっちか決める
+    // C命令だったらalu-out（計算結果）が出力される。A命令だったらA命令が出力される。Aレジスタはデータ値とアドレス値を保存するのでどちらかを決定する
     Mux16(a=instruction,b=alu-out,sel=c-instruction,out=a-register-in);
     // Aレジスタをロードするか(A命令の場合もしくは、instruction[5]が1か)
     Or(a=a-instruction,b=instruction[5],out=is-load-a);
     // Aレジスタの出力は単なるAレジスタの出力と、addressMの２種類存在する
+    // 図を見るとAの出力はMuxに入るもとの、addressMになるものと、PCに入るものがある
     ARegister(in=a-register-in,load=is-load-a,out[0..15]=out-a,out[0..14]=addressM);
-
+    // Aレジスタ~Muxの部分
+    // 13ビット目（a）によってALUが「Aレジスタ」か「メモリ入力」のどちらかを操作するか決定される（P103）
+    // aビットが0だったらout-a 1だったらinM(P71)
     Mux16(a=out-a,b=inM,sel=instruction[12],out=alu-in-y);
-    // instruction[11]からcomp領域なのでそのまま記述。out=alu-out（出力をalu-outとして受け取る）結果の左端が1だった場合結果はマイナスとなるのでout[15]=alu-minusとしている
+    // instruction[11]からcomp領域なのでそのまま記述。(P36の図とP71の図が一致している)
+    // out=alu-out（出力をalu-outとして受け取る）結果の左端が1だった場合結果はマイナスとなるのでout[15]=alu-minusとしている
     ALU(x=out-d, y=alu-in-y, zx=instruction[11], nx=instruction[10], zy=instruction[9], ny=instruction[8], f=instruction[7], no=instruction[6], out=alu-out, out[0..7]=alu-out1, out[8..15]=alu-out2, out[15]=alu-minus, out=outM, zr=alu-zr, ng=alu-ng);
 
     // メモリに書き込むか
+    // C命令だった場合（A命令だったらワードは定数として扱われるののでdest領域がない）かつ、d3（命令の右から4ビット目）が1(P70 dビットコードの3番目のビットは計算結果をMに格納)の場合はメモリに書き込む
     And(a=instruction[3],b=c-instruction,out=writeM);
     // alu-outが正か負か0かを求める
-    Not(in=alu-minus, out=alu-plusorzero); //正の数または0
+    //alu-minusが0（正の数）の場合outは1(正の数(00...111)または0)
+    //alu-minusが1（負の数）の場合outは0(必ず負の数となる)
+    Not(in=alu-minus, out=alu-plusorzero);
     Or8Way(in=alu-out1, out=temp1); // out[0..7]のビットの中で1つでも1があった場合、tmp1はtrueになる
     Or8Way(in=alu-out2, out=temp2); // out[8..15]のビットの中で1つでも1があった場合、tmp2はtrueになる
     Or(a=temp1, b=temp2, out=temp3); // outの全ビットの中で1つでも1があった場合、tmp3はtrueになる
-    Not(in=temp3, out=alu-iszero);
-    And(a=alu-plusorzero, b=temp3, out=alu-plus);
+    Not(in=temp3, out=alu-iszero); // 全ビットが0（temp3が0）の場合、alu-iszeroは１となる＝全ビットが０
+    And(a=alu-plusorzero, b=temp3, out=alu-plus); // temp3がtrueのとき、どこかのビットは１=ゼロではないのでそのandで正の数とわかる
 
     // カウンタ
-    // C命令の場合のみ飛ぶのを忘れずに
+    // C命令の場合のみ飛ぶのを忘れずに（C命令の場合のみjビットが存在する）
     // j1, j2, j3が値として有効か確認
+    // j1はout < 0。outはALUの出力（p73）
     And(a=alu-minus, b=instruction[2], out=is-j1);
+    // j2は out = 0
     And(a=alu-iszero, b=instruction[1], out=is-j2);
+    // j3は out > 0
     And(a=alu-plus, b=instruction[0], out=is-j3);
     // is-j1,is-j2,is-j3のすべてが0の場合、jumpしないので確認する
+    // in[3]...には0がはいるのかな？
     Or8Way(in[0]=is-j1, in[1]=is-j2, in[2]=is-j3, out=is-jump);
     // なおかつ、C命令か
     And(a=is-jump, b=c-instruction, out=can-jump);
     // PC処理
     // incは基本true
+    // pcはaddressMと同じく15ビット
     PC(in=out-a, load=can-jump, inc=true, reset=reset, out[0..14]=pc);
 
 }
